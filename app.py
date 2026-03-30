@@ -1,52 +1,78 @@
 import streamlit as st
-from rembg import remove
-from PIL import Image
 import numpy as np
+from PIL import Image
 import io
+import torch
+import cv2
+from segment_anything import sam_model_registry, SamPredictor
+from streamlit_image_coordinates import streamlit_image_coordinates
 
 st.set_page_config(layout="wide")
 
-st.title("🎯 Full Object Color Changer")
+st.title("🔥 AI Object Selection (Click → Change Color)")
+
+# Load SAM model (cache)
+@st.cache_resource
+def load_model():
+    sam = sam_model_registry["vit_b"](checkpoint="sam_vit_b.pth")
+    sam.to(device="cpu")
+    return SamPredictor(sam)
+
+predictor = load_model()
 
 uploaded_file = st.file_uploader("Upload Image", type=["png", "jpg", "jpeg"])
 
 if uploaded_file:
-    input_image = Image.open(uploaded_file).convert("RGBA")
+    image = Image.open(uploaded_file).convert("RGB")
+    image = image.resize((600, 600))
+    img_np = np.array(image)
 
     col1, col2 = st.columns(2)
 
     with col1:
-        st.image(input_image, caption="Original Image", use_column_width=True)
+        st.subheader("👆 Click on object")
+        coords = streamlit_image_coordinates(image)
 
-    # Remove background (this gives clean object mask)
-    output_image = remove(input_image).convert("RGBA")
+    predictor.set_image(img_np)
 
-    img_array = np.array(output_image)
-
-    # Extract mask (alpha channel)
-    mask = img_array[:, :, 3] > 0
-
-    # Pick color
-    new_color = st.color_picker("Pick Object Color", "#FF0000")
+    new_color = st.color_picker("Pick Color", "#FF0000")
     new_color_rgb = tuple(int(new_color[i:i+2], 16) for i in (1, 3, 5))
 
-    result = img_array.copy()
+    if coords is not None:
+        x, y = coords["x"], coords["y"]
 
-    # Apply color ONLY to object
-    result[mask] = (*new_color_rgb, 255)
+        st.write(f"📍 Clicked: ({x},{y})")
 
-    final_image = Image.fromarray(result)
+        input_point = np.array([[x, y]])
+        input_label = np.array([1])
 
-    with col2:
-        st.image(final_image, caption="Full Object Changed", use_column_width=True)
+        masks, scores, _ = predictor.predict(
+            point_coords=input_point,
+            point_labels=input_label,
+            multimask_output=True,
+        )
 
-    # Download
-    buf = io.BytesIO()
-    final_image.save(buf, format="PNG")
+        mask = masks[0]
 
-    st.download_button(
-        "⬇️ Download",
-        buf.getvalue(),
-        file_name="edited.png",
-        mime="image/png"
-    )
+        result = img_np.copy()
+        result[mask] = new_color_rgb
+
+        final_image = Image.fromarray(result)
+
+        with col2:
+            st.subheader("🎨 AI Edited Image")
+            st.image(final_image, use_column_width=True)
+
+        # Download
+        buf = io.BytesIO()
+        final_image.save(buf, format="PNG")
+
+        st.download_button(
+            "⬇️ Download",
+            buf.getvalue(),
+            file_name="ai_edit.png",
+            mime="image/png"
+        )
+
+else:
+    st.info("Upload image to start")
