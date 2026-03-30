@@ -3,20 +3,20 @@ import numpy as np
 from PIL import Image
 import io
 import torch
-import cv2
 from segment_anything import sam_model_registry, SamPredictor
 from streamlit_image_coordinates import streamlit_image_coordinates
 
 st.set_page_config(layout="wide")
 
-st.title("🔥 AI Object Selection (Click → Change Color)")
+st.title("🔥 AI Click → Select Object → Change Color")
 
-# Load SAM model (cache)
+# Load SAM model
 @st.cache_resource
 def load_model():
     sam = sam_model_registry["vit_b"](checkpoint="sam_vit_b.pth")
     sam.to(device="cpu")
-    return SamPredictor(sam)
+    predictor = SamPredictor(sam)
+    return predictor
 
 predictor = load_model()
 
@@ -41,7 +41,7 @@ if uploaded_file:
     if coords is not None:
         x, y = coords["x"], coords["y"]
 
-        st.write(f"📍 Clicked: ({x},{y})")
+        st.write(f"📍 Clicked: ({x}, {y})")
 
         input_point = np.array([[x, y]])
         input_label = np.array([1])
@@ -52,15 +52,21 @@ if uploaded_file:
             multimask_output=True,
         )
 
-        mask = masks[0]
+        # 🔥 Pick BEST mask (IMPORTANT FIX)
+        best_mask = masks[np.argmax(scores)]
 
+        # Show mask preview (DEBUG)
+        st.subheader("🧠 Detected Mask")
+        st.image(best_mask.astype("uint8") * 255)
+
+        # Apply color
         result = img_np.copy()
-        result[mask] = new_color_rgb
+        result[best_mask] = new_color_rgb
 
         final_image = Image.fromarray(result)
 
         with col2:
-            st.subheader("🎨 AI Edited Image")
+            st.subheader("🎨 Edited Image")
             st.image(final_image, use_column_width=True)
 
         # Download
