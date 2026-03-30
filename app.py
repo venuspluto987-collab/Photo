@@ -23,9 +23,15 @@ if uploaded_file:
 
     # Remove background
     with st.spinner("Removing background..."):
-        output_image = remove(input_image)
+        output_image = remove(input_image).convert("RGBA")
 
-    # Convert to numpy
+    # Resize to avoid crashes
+    output_image = output_image.resize((600, 600))
+
+    # Convert for canvas (VERY IMPORTANT FIX)
+    canvas_bg = output_image.convert("RGB")
+
+    # Convert to numpy AFTER resize
     img_array = np.array(output_image)
 
     st.subheader("🖌️ Draw on object to change color")
@@ -34,10 +40,10 @@ if uploaded_file:
         fill_color="rgba(255, 0, 0, 0.3)",
         stroke_width=15,
         stroke_color="#FF0000",
-        background_image=output_image,
+        background_image=canvas_bg,  # FIXED
         update_streamlit=True,
-        height=output_image.height,
-        width=output_image.width,
+        height=600,
+        width=600,
         drawing_mode="freedraw",
         key="canvas",
     )
@@ -48,27 +54,34 @@ if uploaded_file:
     if canvas_result.image_data is not None:
         mask = canvas_result.image_data[:, :, 3] > 0
 
-        # Convert HEX → RGB
-        new_color_rgb = tuple(int(new_color[i:i+2], 16) for i in (1, 3, 5))
+        # Safety check (prevents crash)
+        if mask.shape[:2] != img_array.shape[:2]:
+            st.warning("⚠️ Canvas mismatch. Try re-uploading image.")
+        else:
+            # Convert HEX → RGB
+            new_color_rgb = tuple(int(new_color[i:i+2], 16) for i in (1, 3, 5))
 
-        result = img_array.copy()
+            result = img_array.copy()
 
-        # Apply color only to selected region
-        result[mask] = (*new_color_rgb, 255)
+            # Apply color only to selected region
+            result[mask] = (*new_color_rgb, 255)
 
-        final_image = Image.fromarray(result)
+            final_image = Image.fromarray(result)
 
-        with col2:
-            st.subheader("Edited Image")
-            st.image(final_image, use_column_width=True)
+            with col2:
+                st.subheader("Edited Image")
+                st.image(final_image, use_column_width=True)
 
-        # Download
-        buf = io.BytesIO()
-        final_image.save(buf, format="PNG")
+            # Download
+            buf = io.BytesIO()
+            final_image.save(buf, format="PNG")
 
-        st.download_button(
-            "⬇️ Download Image",
-            buf.getvalue(),
-            file_name="edited.png",
-            mime="image/png"
-        )
+            st.download_button(
+                "⬇️ Download Image",
+                buf.getvalue(),
+                file_name="edited.png",
+                mime="image/png"
+            )
+
+else:
+    st.info("👆 Upload an image to start")
