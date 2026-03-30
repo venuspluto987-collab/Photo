@@ -20,20 +20,27 @@ if uploaded_file:
         st.subheader("Original Image")
         st.image(input_image, use_column_width=True)
 
+    # Remove background
     with st.spinner("Removing background..."):
         output_image = remove(input_image).convert("RGBA")
 
+    # Resize
     output_image = output_image.resize((600, 600))
-    canvas_bg = output_image.convert("RGB")
+
+    # Convert to numpy
     img_array = np.array(output_image)
 
-    st.subheader("🖌️ Draw on object to change color")
+    st.subheader("🖌️ Draw mask below (same position as image)")
 
+    # Show image ABOVE canvas
+    st.image(output_image, caption="Draw below this image", width=600)
+
+    # Canvas WITHOUT background (IMPORTANT FIX)
     canvas_result = st_canvas(
         fill_color="rgba(255, 0, 0, 0.3)",
         stroke_width=15,
         stroke_color="#FF0000",
-        background_image=canvas_bg,
+        background_color="black",  # no image here
         update_streamlit=True,
         height=600,
         width=600,
@@ -41,6 +48,7 @@ if uploaded_file:
         key="canvas",
     )
 
+    # Color picker
     new_color = st.color_picker("Pick Object Color", "#00FF00")
 
     if canvas_result.image_data is not None:
@@ -58,6 +66,7 @@ if uploaded_file:
                 st.subheader("Edited Image")
                 st.image(final_image, use_column_width=True)
 
+            # Download
             buf = io.BytesIO()
             final_image.save(buf, format="PNG")
 
@@ -68,7 +77,7 @@ if uploaded_file:
                 mime="image/png"
             )
         else:
-            st.warning("⚠️ Please redraw the selection")
+            st.warning("⚠️ Mask mismatch. Try again.")
 
 else:
     st.info("👆 Upload an image to start")
