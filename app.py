@@ -1,4 +1,4 @@
-import streamlit as st
+ import streamlit as st
 from rembg import remove
 from PIL import Image
 import numpy as np
@@ -25,13 +25,13 @@ if uploaded_file:
     with st.spinner("Removing background..."):
         output_image = remove(input_image).convert("RGBA")
 
-    # Resize to avoid crashes
+    # Resize for stability
     output_image = output_image.resize((600, 600))
 
-    # Convert for canvas (VERY IMPORTANT FIX)
+    # Convert for canvas (fix)
     canvas_bg = output_image.convert("RGB")
 
-    # Convert to numpy AFTER resize
+    # Convert to numpy
     img_array = np.array(output_image)
 
     st.subheader("🖌️ Draw on object to change color")
@@ -40,7 +40,7 @@ if uploaded_file:
         fill_color="rgba(255, 0, 0, 0.3)",
         stroke_width=15,
         stroke_color="#FF0000",
-        background_image=canvas_bg,  # FIXED
+        background_image=canvas_bg,
         update_streamlit=True,
         height=600,
         width=600,
@@ -54,16 +54,10 @@ if uploaded_file:
     if canvas_result.image_data is not None:
         mask = canvas_result.image_data[:, :, 3] > 0
 
-        # Safety check (prevents crash)
-        if mask.shape[:2] != img_array.shape[:2]:
-            st.warning("⚠️ Canvas mismatch. Try re-uploading image.")
-        else:
-            # Convert HEX → RGB
+        if mask.shape[:2] == img_array.shape[:2]:
             new_color_rgb = tuple(int(new_color[i:i+2], 16) for i in (1, 3, 5))
 
             result = img_array.copy()
-
-            # Apply color only to selected region
             result[mask] = (*new_color_rgb, 255)
 
             final_image = Image.fromarray(result)
@@ -82,6 +76,8 @@ if uploaded_file:
                 file_name="edited.png",
                 mime="image/png"
             )
+        else:
+            st.warning("⚠️ Please redraw the selection area")
 
 else:
     st.info("👆 Upload an image to start")
