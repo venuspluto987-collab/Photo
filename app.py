@@ -3,81 +3,75 @@ from rembg import remove
 from PIL import Image
 import numpy as np
 import io
-from streamlit_drawable_canvas import st_canvas
+from streamlit_image_coordinates import streamlit_image_coordinates
 
 st.set_page_config(layout="wide")
 
-st.title("🎯 AI Background + Object Color Changer")
+st.title("🎯 Click to Change Object Color")
 
 uploaded_file = st.file_uploader("Upload an image", type=["png", "jpg", "jpeg"])
 
 if uploaded_file:
+    # Load image
     input_image = Image.open(uploaded_file).convert("RGBA")
 
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("Original Image")
-        st.image(input_image, use_column_width=True)
+        st.subheader("Click on area to change")
 
-    # Remove background
-    with st.spinner("Removing background..."):
+        # Remove background
         output_image = remove(input_image).convert("RGBA")
 
-    # Resize
-    output_image = output_image.resize((600, 600))
+        # Resize for stability
+        output_image = output_image.resize((600, 600))
 
-    # Convert to numpy
-    img_array = np.array(output_image)
+        img_array = np.array(output_image)
 
-    st.subheader("🖌️ Draw mask below (same position as image)")
-
-    # Show image ABOVE canvas
-    st.image(output_image, caption="Draw below this image", width=600)
-
-    # Canvas WITHOUT background (IMPORTANT FIX)
-    canvas_result = st_canvas(
-        fill_color="rgba(255, 0, 0, 0.3)",
-        stroke_width=15,
-        stroke_color="#FF0000",
-        background_color="black",  # no image here
-        update_streamlit=True,
-        height=600,
-        width=600,
-        drawing_mode="freedraw",
-        key="canvas",
-    )
+        # CLICK detection
+        coords = streamlit_image_coordinates(output_image)
 
     # Color picker
-    new_color = st.color_picker("Pick Object Color", "#00FF00")
+    new_color = st.color_picker("Pick New Color", "#FF0000")
 
-    if canvas_result.image_data is not None:
-        mask = canvas_result.image_data[:, :, 3] > 0
+    # Tolerance slider (important)
+    tolerance = st.slider("Color Similarity", 10, 100, 40)
 
-        if mask.shape[:2] == img_array.shape[:2]:
-            new_color_rgb = tuple(int(new_color[i:i+2], 16) for i in (1, 3, 5))
+    if coords is not None:
+        x, y = coords["x"], coords["y"]
 
-            result = img_array.copy()
-            result[mask] = (*new_color_rgb, 255)
+        st.write(f"📍 Selected pixel: ({x}, {y})")
 
-            final_image = Image.fromarray(result)
+        # Get selected pixel color
+        selected_color = img_array[y, x][:3]
 
-            with col2:
-                st.subheader("Edited Image")
-                st.image(final_image, use_column_width=True)
+        # Convert HEX → RGB
+        new_color_rgb = tuple(int(new_color[i:i+2], 16) for i in (1, 3, 5))
 
-            # Download
-            buf = io.BytesIO()
-            final_image.save(buf, format="PNG")
+        # Compute color distance
+        diff = np.linalg.norm(img_array[:, :, :3] - selected_color, axis=2)
 
-            st.download_button(
-                "⬇️ Download Image",
-                buf.getvalue(),
-                file_name="edited.png",
-                mime="image/png"
-            )
-        else:
-            st.warning("⚠️ Mask mismatch. Try again.")
+        mask = diff < tolerance
+
+        result = img_array.copy()
+        result[mask] = (*new_color_rgb, 255)
+
+        final_image = Image.fromarray(result)
+
+        with col2:
+            st.subheader("Edited Image")
+            st.image(final_image, use_column_width=True)
+
+        # Download
+        buf = io.BytesIO()
+        final_image.save(buf, format="PNG")
+
+        st.download_button(
+            "⬇️ Download Image",
+            buf.getvalue(),
+            file_name="edited.png",
+            mime="image/png"
+        )
 
 else:
     st.info("👆 Upload an image to start")
