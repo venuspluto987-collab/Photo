@@ -3,86 +3,50 @@ from rembg import remove
 from PIL import Image
 import numpy as np
 import io
-from streamlit_image_coordinates import streamlit_image_coordinates
-from collections import deque
 
 st.set_page_config(layout="wide")
 
-st.title("🎯 Smart Click → Select Area → Change Color")
+st.title("🎯 Full Object Color Changer")
 
 uploaded_file = st.file_uploader("Upload Image", type=["png", "jpg", "jpeg"])
 
 if uploaded_file:
     input_image = Image.open(uploaded_file).convert("RGBA")
 
-    # Remove background
-    output_image = remove(input_image).convert("RGBA")
-    output_image = output_image.resize((600, 600))
-
-    img_array = np.array(output_image)
-
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("👆 Click on object")
-        coords = streamlit_image_coordinates(output_image)
+        st.image(input_image, caption="Original Image", use_column_width=True)
 
-    # Controls
-    new_color = st.color_picker("Pick Color", "#FF0000")
-    tolerance = st.slider("Selection Sensitivity", 10, 80, 30)
+    # Remove background (this gives clean object mask)
+    output_image = remove(input_image).convert("RGBA")
 
-    if coords is not None:
-        x, y = coords["x"], coords["y"]
-        st.write(f"📍 Clicked: ({x}, {y})")
+    img_array = np.array(output_image)
 
-        selected_color = img_array[y, x][:3]
+    # Extract mask (alpha channel)
+    mask = img_array[:, :, 3] > 0
 
-        h, w, _ = img_array.shape
-        visited = np.zeros((h, w), dtype=bool)
-        mask = np.zeros((h, w), dtype=bool)
+    # Pick color
+    new_color = st.color_picker("Pick Object Color", "#FF0000")
+    new_color_rgb = tuple(int(new_color[i:i+2], 16) for i in (1, 3, 5))
 
-        # BFS (region growing)
-        queue = deque()
-        queue.append((y, x))
-        visited[y, x] = True
+    result = img_array.copy()
 
-        while queue:
-            cy, cx = queue.popleft()
+    # Apply color ONLY to object
+    result[mask] = (*new_color_rgb, 255)
 
-            current_color = img_array[cy, cx][:3]
-            diff = np.linalg.norm(current_color - selected_color)
+    final_image = Image.fromarray(result)
 
-            if diff < tolerance:
-                mask[cy, cx] = True
+    with col2:
+        st.image(final_image, caption="Full Object Changed", use_column_width=True)
 
-                for ny, nx in [(cy+1, cx), (cy-1, cx), (cy, cx+1), (cy, cx-1)]:
-                    if 0 <= ny < h and 0 <= nx < w and not visited[ny, nx]:
-                        visited[ny, nx] = True
-                        queue.append((ny, nx))
+    # Download
+    buf = io.BytesIO()
+    final_image.save(buf, format="PNG")
 
-        # Convert HEX → RGB
-        new_color_rgb = tuple(int(new_color[i:i+2], 16) for i in (1, 3, 5))
-
-        result = img_array.copy()
-        result[mask] = (*new_color_rgb, 255)
-
-        final_image = Image.fromarray(result)
-
-        with col2:
-            st.subheader("🎨 Edited Image")
-            st.image(final_image, use_column_width=True)
-
-        # Download
-        buf = io.BytesIO()
-        final_image.save(buf, format="PNG")
-
-        st.download_button(
-            "⬇️ Download",
-            buf.getvalue(),
-            file_name="edited.png",
-            mime="image/png"
-        )
-
-else:
-    st.info("Upload an image to start")
-    
+    st.download_button(
+        "⬇️ Download",
+        buf.getvalue(),
+        file_name="edited.png",
+        mime="image/png"
+    )
